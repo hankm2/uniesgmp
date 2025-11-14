@@ -66,6 +66,8 @@
     <!-- Firebase SDK (Auth only required for this change) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        // 'setLogLevel'은 getAuth에서 import 하는 것이 아니라 firebase/auth 모듈에서 제공됩니다.
+        // 하지만 CDN 버전 11.6.1에서 'setLogLevel'을 가져오는 것이 불안정할 수 있으므로 제거합니다.
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         
         // =========================================================================================
@@ -98,23 +100,22 @@
          * Firebase 인증을 초기화하고 데이터 로드를 시작합니다.
          */
         async function initAuth() {
-            // setLogLevel은 firebase-auth.js 모듈에서 내보내지지 않아 오류가 발생했습니다.
-            // 치명적인 오류를 수정하기 위해 해당 코드를 제거합니다.
-            // setLogLevel('debug'); 
             
             const authStatusDiv = document.getElementById('authStatus');
             const appContainer = document.getElementById('appContainer');
 
-            console.log("--- Firebase 인증 프로세스 시작 (setLogLevel 제거) ---");
+            // 초기 상태: 로딩 표시, 앱 컨테이너 숨김
             authStatusDiv.innerHTML = `<div class="loading-spinner w-5 h-5 border-2 border-gray-300 rounded-full mx-auto mb-1"></div><p class="text-gray-600 font-semibold text-sm">보안 인증 확인 중...</p>`;
+            appContainer.classList.add('hidden');
+            document.getElementById('loadingIndicator').classList.add('hidden'); // 데이터 로딩 인디케이터도 초기에는 숨김
+
+            console.log("--- Firebase 인증 프로세스 시작 ---");
             
             // Firebase Config 유효성 검사 (API Key 누락/잘못된 값 확인)
             if (!firebaseConfig.apiKey || firebaseConfig.apiKey.includes("YOUR_API_KEY") || firebaseConfig.apiKey.length < 20) {
                  authStatusDiv.innerHTML = `<p class="text-red-700 font-bold">🚨 설정 오류: Firebase API Key가 유효하지 않습니다.</p><p class="text-red-500 text-sm mt-1">이전 콘솔 에러: auth/invalid-api-key</p>`;
-                document.getElementById('loadingIndicator').classList.add('hidden');
-                appContainer.classList.add('hidden');
                 console.error("Firebase 설정 오류: apiKey가 유효하지 않습니다. Canvas 변수와 제공된 config를 모두 확인하세요.");
-                return;
+                return; // 치명적인 오류이므로 여기서 중단
             }
 
             try {
@@ -141,7 +142,15 @@
                     } else {
                         // 인증 대기 중 또는 로그아웃 상태
                         window.userId = null;
-                        console.log("3.2. 인증 상태 변경: 사용자 없음. 로그인 시도 중...");
+                        
+                        // 인증이 완료되기 전까지는 로딩 상태 유지
+                        if (authStatusDiv.innerHTML.includes('보안 인증 확인 중')) {
+                            console.log("3.2. 인증 상태 변경: 사용자 없음. 로그인 시도 중...");
+                        } else {
+                            // 명시적인 로그아웃 상태이거나 인증 실패 후
+                            appContainer.classList.add('hidden'); 
+                            authStatusDiv.innerHTML = `<p class="text-yellow-600 font-semibold">⚠️ 인증 필요: 로그인 시도 중...</p>`;
+                        }
                         
                         // 자동 로그인 시도
                         try {
@@ -158,9 +167,10 @@
                             }
                         } catch (signInError) {
                             console.error("❌ Firebase Sign-in 시도 중 치명적인 오류 발생:", signInError);
-                            // 오류 발생 시, 상태를 업데이트하여 멈춤 현상 방지
+                            // 오류 발생 시, 상태를 업데이트하고 앱 컨테이너를 숨김
                             authStatusDiv.innerHTML = `<p class="text-red-700 font-bold">🚨 사인인 오류: ${signInError.code || '알 수 없음'}</p><p class="text-red-500 text-sm">${signInError.message.substring(0, 100) + '...'}</p>`;
-                            document.getElementById('loadingIndicator').classList.add('hidden');
+                            appContainer.classList.add('hidden'); // 앱 컨테이너 숨김
+                            document.getElementById('loadingIndicator').classList.add('hidden'); // 혹시 모를 로딩 표시 제거
                         }
                     }
                 });
@@ -169,6 +179,8 @@
                 // auth/invalid-api-key 오류는 보통 여기서 잡힙니다.
                 console.error("❌ Firebase 초기화 또는 설정 오류:", error);
                 authStatusDiv.innerHTML = `<p class="text-red-700 font-bold">🚨 Firebase 초기화 오류:</p><p class="text-red-500 text-sm">${error.message.substring(0, 100) + '...'}</p>`;
+                appContainer.classList.add('hidden'); // 초기화 실패 시 앱 컨테이너 숨김
+                document.getElementById('loadingIndicator').classList.add('hidden');
             }
         }
         
@@ -484,6 +496,7 @@
                 console.error("❌ 데이터 로드 중 오류 발생:", error);
                 errorText.textContent = `데이터 로드/파싱 오류: ${error.message}`;
                 errorMessage.classList.remove('hidden');
+                // 데이터 로드 실패 시에도 appContainer는 유지되어야 검색/오류 메시지 표시 가능
             } finally {
                 loadingIndicator.classList.add('hidden');
             }
