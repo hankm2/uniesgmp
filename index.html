@@ -45,7 +45,7 @@
             transition: background-color 0.15s;
         }
         .sortable-header:hover {
-            background-color: rgba(255, 255, 255, 0.1);
+            background-color: rgba(0, 0, 0, 0.05); /* 마우스 오버 시 약간의 회색 효과 */
         }
         .sort-icon {
             display: inline-block;
@@ -63,130 +63,6 @@
             border-top: 5px solid white; /* Down arrow */
         }
     </style>
-    <!-- Firebase SDK (Auth only required for this change) -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        // 'setLogLevel'은 getAuth에서 import 하는 것이 아니라 firebase/auth 모듈에서 제공됩니다.
-        // 하지만 CDN 버전 11.6.1에서 'setLogLevel'을 가져오는 것이 불안정할 수 있으므로 제거합니다.
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        
-        // =========================================================================================
-        // ⭐ [필수] 1단계: 캔버스 환경 변수를 사용하여 Firebase 설정을 로드합니다.
-        // =========================================================================================
-        const firebaseConfigFromCanvas = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : undefined;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-        // 이전 오류를 해결하기 위해 사용자님이 제공한 config를 안전한 대체값으로 유지합니다.
-        const providedConfig = {
-            apiKey: "AIzaSyCzCoZqh1Xyd5-GTIiwxAErrMb7cPMnK3g", 
-            authDomain: "gmp-passenger-svc.firebaseapp.com", 
-            projectId: "gmp-passenger-svc", 
-            storageBucket: "gmp-passenger-svc.firebasestorage.app",
-            messagingSenderId: "451580233202",
-            appId: "1:451580233202:web:67506cdc27394f5187576b"
-        };
-        
-        // 캔버스 환경 변수 우선 사용. 없으면 제공된 config 사용
-        const firebaseConfig = firebaseConfigFromCanvas || providedConfig;
-        
-        // =========================================================================================
-
-        window.userId = null;
-        window.firebaseApp = null;
-        window.auth = null;
-
-        /**
-         * Firebase 인증을 초기화하고 데이터 로드를 시작합니다.
-         */
-        async function initAuth() {
-            
-            const authStatusDiv = document.getElementById('authStatus');
-            const appContainer = document.getElementById('appContainer');
-
-            // 초기 상태: 로딩 표시, 앱 컨테이너 숨김
-            authStatusDiv.innerHTML = `<div class="loading-spinner w-5 h-5 border-2 border-gray-300 rounded-full mx-auto mb-1"></div><p class="text-gray-600 font-semibold text-sm">보안 인증 확인 중...</p>`;
-            appContainer.classList.add('hidden');
-            document.getElementById('loadingIndicator').classList.add('hidden'); // 데이터 로딩 인디케이터도 초기에는 숨김
-
-            console.log("--- Firebase 인증 프로세스 시작 ---");
-            
-            // Firebase Config 유효성 검사 (API Key 누락/잘못된 값 확인)
-            if (!firebaseConfig.apiKey || firebaseConfig.apiKey.includes("YOUR_API_KEY") || firebaseConfig.apiKey.length < 20) {
-                 authStatusDiv.innerHTML = `<p class="text-red-700 font-bold">🚨 설정 오류: Firebase API Key가 유효하지 않습니다.</p><p class="text-red-500 text-sm mt-1">이전 콘솔 에러: auth/invalid-api-key</p>`;
-                console.error("Firebase 설정 오류: apiKey가 유효하지 않습니다. Canvas 변수와 제공된 config를 모두 확인하세요.");
-                return; // 치명적인 오류이므로 여기서 중단
-            }
-
-            try {
-                // 1. Firebase 앱 초기화
-                window.firebaseApp = initializeApp(firebaseConfig);
-                window.auth = getAuth(window.firebaseApp);
-                console.log("1. Firebase 앱 및 Auth 서비스 초기화 완료.");
-                
-                // 2. 세션 단위로 인증 상태 유지 설정
-                await setPersistence(window.auth, browserSessionPersistence);
-                console.log("2. 인증 지속성(Persistence) 설정 완료.");
-
-                // 3. 인증 상태 변경 리스너 설정
-                onAuthStateChanged(window.auth, async (user) => {
-                    if (user) {
-                        // 인증 성공 (로그인 완료)
-                        window.userId = user.uid;
-                        authStatusDiv.innerHTML = `<p class="text-green-600 font-semibold">✅ 인증 성공: ${user.isAnonymous ? '익명 사용자' : user.uid.substring(0, 8) + '...'}</p>`;
-                        appContainer.classList.remove('hidden');
-                        console.log(`3.1. 인증 상태 변경: 성공. User ID: ${window.userId}`);
-                        
-                        // 데이터 로드 시작
-                        window.fetchData(); 
-                    } else {
-                        // 인증 대기 중 또는 로그아웃 상태
-                        window.userId = null;
-                        
-                        // 인증이 완료되기 전까지는 로딩 상태 유지
-                        if (authStatusDiv.innerHTML.includes('보안 인증 확인 중')) {
-                            console.log("3.2. 인증 상태 변경: 사용자 없음. 로그인 시도 중...");
-                        } else {
-                            // 명시적인 로그아웃 상태이거나 인증 실패 후
-                            appContainer.classList.add('hidden'); 
-                            authStatusDiv.innerHTML = `<p class="text-yellow-600 font-semibold">⚠️ 인증 필요: 로그인 시도 중...</p>`;
-                        }
-                        
-                        // 자동 로그인 시도
-                        try {
-                            if (initialAuthToken) {
-                                console.log("4. Canvas 토큰으로 Custom Sign-in 시도.");
-                                // 토큰으로 로그인 시도
-                                await signInWithCustomToken(window.auth, initialAuthToken);
-                                console.log("4.1. Custom Sign-in Promise 완료. onAuthStateChanged 대기 중...");
-                            } else {
-                                console.log("4. 토큰 없음. 익명(Anonymous) Sign-in 시도.");
-                                // 익명 로그인 시도
-                                await signInAnonymously(window.auth);
-                                console.log("4.1. Anonymous Sign-in Promise 완료. onAuthStateChanged 대기 중...");
-                            }
-                        } catch (signInError) {
-                            console.error("❌ Firebase Sign-in 시도 중 치명적인 오류 발생:", signInError);
-                            // 오류 발생 시, 상태를 업데이트하고 앱 컨테이너를 숨김
-                            authStatusDiv.innerHTML = `<p class="text-red-700 font-bold">🚨 사인인 오류: ${signInError.code || '알 수 없음'}</p><p class="text-red-500 text-sm">${signInError.message.substring(0, 100) + '...'}</p>`;
-                            appContainer.classList.add('hidden'); // 앱 컨테이너 숨김
-                            document.getElementById('loadingIndicator').classList.add('hidden'); // 혹시 모를 로딩 표시 제거
-                        }
-                    }
-                });
-                
-            } catch (error) {
-                // auth/invalid-api-key 오류는 보통 여기서 잡힙니다.
-                console.error("❌ Firebase 초기화 또는 설정 오류:", error);
-                authStatusDiv.innerHTML = `<p class="text-red-700 font-bold">🚨 Firebase 초기화 오류:</p><p class="text-red-500 text-sm">${error.message.substring(0, 100) + '...'}</p>`;
-                appContainer.classList.add('hidden'); // 초기화 실패 시 앱 컨테이너 숨김
-                document.getElementById('loadingIndicator').classList.add('hidden');
-            }
-        }
-        
-        // 전역 스크립트에서 호출될 수 있도록 window에 붙여줍니다.
-        window.initAuth = initAuth;
-    </script>
 </head>
 <body class="p-4 sm:p-8">
 
@@ -196,18 +72,14 @@
                 유니에스 김포여객서비스센터 인사 시스템
             </h1>
             <p class="text-gray-500">
-                **🔑 CSV URL에서 데이터를 로드합니다.** (Firebase 인증 필요)
+                CSV URL에서 데이터를 로드하여 직원 정보를 조회합니다.
             </p>
         </header>
         
-        <!-- 인증 상태 표시 영역 -->
-        <div id="authStatus" class="mb-4 p-3 bg-white rounded-lg shadow-md text-center">
-            <div class="loading-spinner w-5 h-5 border-2 border-gray-300 rounded-full mx-auto mb-1"></div>
-            <p class="text-gray-600 font-semibold text-sm">보안 인증 확인 중...</p>
-        </div>
+        <!-- 인증 상태 표시 영역 제거됨 -->
 
-        <!-- 메인 콘텐츠 컨테이너 (인증 성공 시 표시) -->
-        <div id="appContainer" class="hidden"> 
+        <!-- 메인 콘텐츠 컨테이너 (이제 항상 표시됨) -->
+        <div id="appContainer"> 
             
             <div class="bg-white p-6 rounded-xl shadow-lg mb-6">
                 <!-- onkeydown 이벤트를 추가하여 Enter 키 입력을 처리합니다 -->
@@ -216,7 +88,7 @@
             </div>
 
             <!-- Data Display Area -->
-            <div id="loadingIndicator" class="text-center p-12 hidden">
+            <div id="loadingIndicator" class="text-center p-12">
                 <div class="loading-spinner w-10 h-10 border-4 border-gray-200 rounded-full mx-auto mb-3"></div>
                 <p class="text-gray-600 font-semibold">데이터를 불러오는 중...</p>
             </div>
@@ -282,6 +154,7 @@
 
     <script>
         // --- 전역 변수 및 설정 ---
+        // 공개된 구글 스프레드시트의 CSV URL
         const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRhRSIrOkpjenB3NkRqlmbabYlHWmo93T2Ke9FZ2qefC3asGENv02dgNpgqIYgy1yHHPGl6ecJ-LWon/pub?gid=0&single=true&output=csv';
 
         // CSV 헤더 (한국어)를 내부 키 (영어)로 매핑
@@ -351,6 +224,7 @@
                     let value = values[j].trim();
                     
                     if (key === 'projects' && value) {
+                        // 프로젝트 값은 세미콜론(;)으로 분리하여 배열로 저장
                         obj[key] = value.split(';').map(p => p.trim()).filter(p => p.length > 0); 
                     } else {
                         obj[key] = value === '' ? 'N/A' : value;
@@ -438,6 +312,7 @@
 
             data.forEach(person => {
                 const row = tableBody.insertRow();
+                // JSON 문자열을 안전하게 인코딩하여 onclick에 전달
                 const personJsonString = JSON.stringify(person).replace(/'/g, "\\'").replace(/"/g, "&quot;"); 
                 row.onclick = () => showDetails(personJsonString);
                 row.className = 'hover:bg-gray-50 cursor-pointer transition duration-150';
@@ -466,16 +341,15 @@
 
 
         /**
-         * 데이터를 가져옵니다 (인증 후 호출됨).
+         * 데이터를 가져옵니다 (인증 과정 없이 바로 호출됨).
          */
         async function fetchData() {
-            console.log("5. fetchData 시작: CSV URL 데이터 로드 시도.");
+            console.log("데이터 로드 시작: CSV URL 데이터 로드 시도.");
             loadingIndicator.classList.remove('hidden');
             errorMessage.classList.add('hidden');
             personnelData = [];
 
             try {
-                // 이 CSV URL은 인증이 필요 없습니다. (Public access)
                 const response = await fetch(CSV_URL);
                 if (!response.ok) {
                     throw new Error(`HTTP 오류! 상태 코드: ${response.status}. CSV URL을 확인하세요.`);
@@ -490,13 +364,12 @@
                 
                 // 초기 정렬 (사번 ASC) 적용 및 렌더링
                 sortData(currentSort.key, true); 
-                console.log("6. 데이터 로드 및 초기 렌더링 성공.");
+                console.log("데이터 로드 및 초기 렌더링 성공.");
 
             } catch (error) {
                 console.error("❌ 데이터 로드 중 오류 발생:", error);
                 errorText.textContent = `데이터 로드/파싱 오류: ${error.message}`;
                 errorMessage.classList.remove('hidden');
-                // 데이터 로드 실패 시에도 appContainer는 유지되어야 검색/오류 메시지 표시 가능
             } finally {
                 loadingIndicator.classList.add('hidden');
             }
@@ -520,11 +393,14 @@
                 case 'hireDate':
                 case 'dateOfBirth':
                 case 'qaCertDate':
+                    // 날짜를 밀리초로 변환하여 숫자 정렬
                     const dateVal = new Date(person[key]);
                     return isNaN(dateVal.getTime()) ? new Date(0) : dateVal; 
                 case 'id':
+                    // 사번을 문자열로 처리하여 문자 정렬 (숫자형 ID라면 개선 필요)
                     return person.id || '';
                 default:
+                    // 기본 문자열 값
                     return person[key] || '';
             }
         }
@@ -541,7 +417,7 @@
                 currentSort.direction = 'asc';
             }
 
-            // 2. 데이터 정렬 로직 (이전 버전과 동일)
+            // 2. 데이터 정렬 로직
             personnelData.sort((a, b) => {
                 const valA = getValueToSort(a, key);
                 const valB = getValueToSort(b, key);
@@ -565,27 +441,31 @@
             // 3. 정렬 아이콘 업데이트
             updateSortIndicators();
 
-            // 4. 필터링된 데이터로 테이블 갱신 (검색창이 비어있으므로 전체 데이터를 렌더링)
-            renderTable(personnelData);
+            // 4. 필터링된 데이터로 테이블 갱신 (검색창이 비어있으면 전체 데이터를 렌더링)
+            filterData(); 
         }
 
         /**
          * 테이블 헤더의 정렬 아이콘을 업데이트합니다.
          */
         function updateSortIndicators() {
+            // 모든 헤더의 배경색 초기화
             document.querySelectorAll('.sortable-header').forEach(header => {
-                header.classList.remove('bg-opacity-30'); 
+                header.style.backgroundColor = ''; // CSS 인라인 스타일 제거
             });
             
+            // 모든 아이콘 클래스 제거
             document.querySelectorAll('.sort-icon').forEach(icon => {
                 icon.classList.remove('sort-asc', 'sort-desc');
             });
             
-            const activeHeader = document.querySelector(`.sortable-header[data-key="${currentSort.key}"]`);
-            if (activeHeader) {
-                activeHeader.classList.add('bg-opacity-30');
-            }
+            // 활성 헤더 배경색 변경 (배경색은 테이블 헤드 스타일로 유지)
+            // const activeHeader = document.querySelector(`.sortable-header[data-key="${currentSort.key}"]`);
+            // if (activeHeader) {
+            //     activeHeader.style.backgroundColor = '#d94b0d'; // #EF7D33보다 약간 어둡게
+            // }
 
+            // 활성 아이콘 클래스 추가
             const activeIcon = document.getElementById(`sort-icon-${currentSort.key}`);
             if (activeIcon) {
                 activeIcon.classList.add(currentSort.direction === 'asc' ? 'sort-asc' : 'sort-desc');
@@ -608,6 +488,7 @@
          * 직원 상세 정보를 모달로 표시합니다.
          */
         function showDetails(personJsonString) {
+            // 안전하게 JSON 파싱
             const person = JSON.parse(personJsonString.replace(/&quot;/g, '"'));
             
             const modal = document.getElementById('detailModal');
@@ -723,6 +604,7 @@
                     const personJsonString = JSON.stringify(person).replace(/'/g, "\\'").replace(/"/g, "&quot;");
                     showDetails(personJsonString);
                 } else if (currentFilteredData.length > 1) {
+                    // 정확히 일치하는 이름이나 사번이 있다면 상세 정보 표시
                     const exactMatch = currentFilteredData.find(person => 
                         (person.name && String(person.name) === searchInput) || 
                         (person.id && String(person.id) === searchInput)
@@ -736,8 +618,8 @@
             }
         }
 
-        // 초기 Firebase 인증 프로세스 시작
-        window.onload = window.initAuth;
+        // 페이지 로드 후 바로 데이터 로드 함수 호출
+        window.onload = fetchData;
     </script>
 </body>
 </html>
