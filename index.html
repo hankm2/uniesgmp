@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>유니에스 인천여객서비스센터 인사기록 조회</title>
+    <title>유니에스 김포여객서비스센터 인사기록 조회</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Inter Font -->
@@ -68,41 +68,63 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         
-        // Canvas 환경에서 제공되는 전역 변수 사용
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        // =========================================================================================
+        // ⭐ [필수] 1단계: 웹 게시를 위해 Firebase 설정을 여기에 직접 붙여넣으세요.
+        // 이 코드를 웹에 배포하려면 아래 firebaseConfig 객체에 실제 Firebase 프로젝트 설정을 넣어주어야 합니다.
+        // =========================================================================================
+        const firebaseConfigFromCanvas = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : undefined;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-        // 전역 변수로 Firebase 인스턴스 저장 (window 객체에 붙여서 다른 스크립트에서 접근 가능하도록 함)
-        window.firebaseApp = initializeApp(firebaseConfig);
-        window.auth = getAuth(window.firebaseApp);
+        const firebaseConfig = firebaseConfigFromCanvas || {
+            apiKey: "AIzaSyCzCoZqh1Xyd5-GTIiwxAErrMb7cPMnK3g", // <-- 여기에 실제 키를 넣으세요!
+            authDomain: "gmp-passenger-svc.firebaseapp.com", 
+            projectId: "gmp-passenger-svc", 
+            storageBucket: "gmp-passenger-svc.firebasestorage.app",
+            messagingSenderId: "451580233202",
+            appId: "1:451580233202:web:67506cdc27394f5187576b"
+            // 나머지 설정 필드도 여기에 포함해야 합니다.
+            // Firebase 콘솔에서 '웹 앱 추가' 후 제공되는 전체 코드를 복사하세요.
+        };
+        // =========================================================================================
+
         window.userId = null;
+        window.firebaseApp = null;
+        window.auth = null;
 
         /**
          * Firebase 인증을 초기화하고 데이터 로드를 시작합니다.
          */
         async function initAuth() {
+            const authStatusDiv = document.getElementById('authStatus');
+            const appContainer = document.getElementById('appContainer');
+
+            // Firebase Config 유효성 검사 (API Key가 더미 값인지 확인)
+            if (!firebaseConfigFromCanvas && (!firebaseConfig.apiKey || firebaseConfig.apiKey === "YOUR_API_KEY")) {
+                authStatusDiv.innerHTML = `
+                    <p class="text-red-700 font-bold">🚨 설정 오류: Firebase API Key가 누락되었습니다.</p>
+                    <p class="text-red-500 text-sm mt-1">
+                        위 스크립트의 'YOUR_API_KEY' 부분을 실제 Firebase 프로젝트 설정으로 교체해주세요.
+                    </p>
+                `;
+                document.getElementById('loadingIndicator').classList.add('hidden');
+                appContainer.classList.add('hidden');
+                return;
+            }
+
             try {
+                window.firebaseApp = initializeApp(firebaseConfig);
+                window.auth = getAuth(window.firebaseApp);
+                
                 // 세션 단위로 인증 상태 유지
                 await setPersistence(window.auth, browserSessionPersistence);
 
-                if (initialAuthToken) {
-                    // 커스텀 토큰이 제공되면 이를 사용해 로그인 시도
-                    await signInWithCustomToken(window.auth, initialAuthToken);
-                } else {
-                    // 토큰이 없으면 익명 로그인 시도 (최소한의 인증 상태 확보)
-                    await signInAnonymously(window.auth);
-                }
-                
                 // 인증 상태 변경 리스너 설정
-                onAuthStateChanged(window.auth, (user) => {
-                    const authStatusDiv = document.getElementById('authStatus');
-                    const appContainer = document.getElementById('appContainer');
-
+                onAuthStateChanged(window.auth, async (user) => {
                     if (user) {
                         // 로그인 성공
                         window.userId = user.uid;
-                        authStatusDiv.innerHTML = `<p class="text-green-600 font-semibold">✅ 인증 성공: ${user.isAnonymous ? '익명 사용자' : user.uid}</p>`;
+                        authStatusDiv.innerHTML = `<p class="text-green-600 font-semibold">✅ 인증 성공: ${user.isAnonymous ? '익명 사용자' : user.uid.substring(0, 8) + '...'}</p>`;
                         appContainer.classList.remove('hidden');
                         
                         // 인증 성공 후 데이터 로드 시작 (원래의 fetchData 함수 호출)
@@ -113,13 +135,23 @@
                         authStatusDiv.innerHTML = `<p class="text-red-600 font-semibold">❌ 인증 대기 중 또는 실패...</p>`;
                         appContainer.classList.add('hidden');
                         document.getElementById('loadingIndicator').classList.add('hidden');
+                        
+                        // 사용자가 없을 경우, 자동 로그인 시도
+                        if (initialAuthToken) {
+                            // 커스텀 토큰이 제공되면 이를 사용해 로그인 시도
+                            await signInWithCustomToken(window.auth, initialAuthToken);
+                        } else {
+                            // 토큰이 없으면 익명 로그인 시도 (최소한의 인증 상태 확보)
+                            await signInAnonymously(window.auth);
+                        }
                     }
                 });
 
+                // 초기 인증 상태 확인 (onAuthStateChanged가 처리함)
+                
             } catch (error) {
-                console.error("Firebase 인증 오류:", error);
-                const authStatusDiv = document.getElementById('authStatus');
-                authStatusDiv.innerHTML = `<p class="text-red-600 font-semibold">🚨 보안 초기화 오류: ${error.message}</p>`;
+                console.error("Firebase 초기화 또는 인증 오류:", error);
+                authStatusDiv.innerHTML = `<p class="text-red-600 font-semibold">🚨 Firebase 초기화 오류: 프로젝트 설정을 확인하세요.</p>`;
             }
         }
         
@@ -446,17 +478,26 @@
             updateSortIndicators();
 
             // 4. 필터링된 데이터로 테이블 갱신
-            filterData();
+            renderTable(filteredData);
         }
 
         /**
          * 테이블 헤더의 정렬 아이콘을 업데이트합니다.
          */
         function updateSortIndicators() {
+            document.querySelectorAll('.sortable-header').forEach(header => {
+                header.classList.remove('bg-opacity-30'); // 기존 활성 배경 제거
+            });
+            
             document.querySelectorAll('.sort-icon').forEach(icon => {
                 icon.classList.remove('sort-asc', 'sort-desc');
             });
             
+            const activeHeader = document.querySelector(`.sortable-header[data-key="${currentSort.key}"]`);
+            if (activeHeader) {
+                activeHeader.classList.add('bg-opacity-30');
+            }
+
             const activeIcon = document.getElementById(`sort-icon-${currentSort.key}`);
             if (activeIcon) {
                 activeIcon.classList.add(currentSort.direction === 'asc' ? 'sort-asc' : 'sort-desc');
@@ -569,117 +610,6 @@
         }
 
         /**
-         * 데이터를 테이블에 렌더링합니다.
-         * @param {Array<Object>} data - 표시할 직원 데이터 배열 (이미 정렬/필터링된 상태)
-         */
-        function renderTable(data) {
-            tableBody.innerHTML = ''; 
-
-            const TOTAL_COLUMNS = 12; 
-            if (data.length === 0) {
-                const row = tableBody.insertRow();
-                row.className = 'text-center';
-                const cell = row.insertCell(0);
-                cell.colSpan = TOTAL_COLUMNS;
-                cell.className = 'py-4 text-gray-500';
-                cell.textContent = "조회된 인사 기록이 없습니다.";
-                return;
-            }
-
-            data.forEach((person, index) => {
-                const row = tableBody.insertRow();
-                row.className = `transition duration-100 ${index % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-gray-50 hover:bg-gray-100'}`;
-                
-                const personJsonString = JSON.stringify(person).replace(/'/g, "\\'");
-                
-                // 파생 정보 계산 및 포맷팅
-                const age = calculateAge(person.dateOfBirth);
-                const lengthOfServiceDays = calculateLengthOfService(person.hireDate);
-
-                // 근속기간 표시 포맷 (년/개월)
-                let lengthOfServiceDisplay = 'N/A';
-                if (!isNaN(lengthOfServiceDays) && lengthOfServiceDays >= 0) {
-                    const years = Math.floor(lengthOfServiceDays / 365.25);
-                    const remainingDays = lengthOfServiceDays % 365.25;
-                    const months = Math.floor(remainingDays / (365.25 / 12));
-                    
-                    if (years === 0 && months === 0) {
-                        lengthOfServiceDisplay = `${lengthOfServiceDays}일차`;
-                    } else if (years === 0) {
-                        lengthOfServiceDisplay = `${months}개월`;
-                    } else {
-                        lengthOfServiceDisplay = `${years}년 ${months}개월`;
-                    }
-                }
-                
-                let cell;
-                let cellIndex = 0;
-                
-                // 1. 사번
-                cell = row.insertCell(cellIndex++);
-                cell.className = 'px-4 py-3 text-sm font-medium text-gray-800 sm:px-6';
-                cell.textContent = person.id || 'N/A';
-
-                // 2. 이름 (클릭 가능)
-                cell = row.insertCell(cellIndex++);
-                cell.className = 'px-4 py-3 text-sm font-medium text-blue-600 hover:text-blue-800 cursor-pointer sm:px-6';
-                cell.textContent = person.name || 'N/A';
-                cell.setAttribute('onclick', `showDetails('${personJsonString}')`);
-                
-                // 3. 부서
-                cell = row.insertCell(cellIndex++);
-                cell.className = 'px-4 py-3 text-sm text-gray-500 sm:px-6';
-                cell.textContent = person.department || 'N/A';
-
-                // 4. 직급
-                cell = row.insertCell(cellIndex++);
-                cell.className = 'px-4 py-3 text-sm text-gray-500 sm:px-6';
-                cell.textContent = person.position || 'N/A';
-
-                // 5. 입사일
-                cell = row.insertCell(cellIndex++);
-                cell.className = 'px-4 py-3 text-sm text-gray-500 sm:px-6';
-                cell.textContent = person.hireDate || 'N/A';
-
-                // 6. 생년월일
-                cell = row.insertCell(cellIndex++);
-                cell.className = 'px-4 py-3 text-sm text-gray-500 sm:px-6';
-                cell.textContent = person.dateOfBirth || 'N/A';
-
-                // 7. 만 나이 (계산된 값)
-                cell = row.insertCell(cellIndex++);
-                cell.className = 'px-4 py-3 text-sm text-gray-500 sm:px-6';
-                cell.textContent = isNaN(age) ? 'N/A' : age + '세';
-                
-                // 8. 성별
-                cell = row.insertCell(cellIndex++);
-                cell.className = 'px-4 py-3 text-sm text-gray-500 sm:px-6';
-                cell.textContent = person.gender || 'N/A';
-
-                // 9. 근속기간 (계산된 값)
-                cell = row.insertCell(cellIndex++);
-                cell.className = 'px-4 py-3 text-sm text-gray-500 sm:px-6';
-                cell.textContent = lengthOfServiceDisplay;
-
-                // 10. QA인증일자
-                cell = row.insertCell(cellIndex++);
-                cell.className = 'px-4 py-3 text-sm text-gray-500 sm:px-6';
-                cell.textContent = person.qaCertDate || 'N/A';
-
-                // 11. 연락처
-                cell = row.insertCell(cellIndex++);
-                cell.className = 'px-4 py-3 text-sm text-gray-500 sm:px-6';
-                cell.textContent = person.phone || 'N/A';
-
-                // 12. 이메일
-                cell = row.insertCell(cellIndex++);
-                cell.className = 'px-4 py-3 text-sm text-gray-500 sm:px-6';
-                cell.textContent = person.email || 'N/A';
-
-            });
-        }
-
-        /**
          * 검색어에 따라 테이블 데이터를 필터링합니다.
          */
         function filterData() {
@@ -741,4 +671,7 @@
         window.onload = window.initAuth;
     </script>
 </body>
+</html>
+</body>
+
 </html>
